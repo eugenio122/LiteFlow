@@ -38,7 +38,7 @@ Desenvolvido em C# (.NET 10) e Windows Forms, sua arquitetura foi exaustivamente
 
 Você não precisa baixar o código-fonte para usar! Baixe a versão pronta para uso diretamente na página de Releases do GitHub:
 
-👉 [**Baixar LiteShot (Versão Mais Recente)**](https://github.com/eugenio122/LiteFlow/releases/latest)
+👉 [**Baixar LiteFlow (Versão Mais Recente)**](https://github.com/eugenio122/LiteFlow/releases/latest)
 
 <br>
 
