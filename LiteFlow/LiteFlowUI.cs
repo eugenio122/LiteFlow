@@ -1,4 +1,5 @@
 ﻿using LiteFlow.Controller;
+using LiteFlow.Core;
 using LiteFlow.Forms;
 using LiteFlow.Models;
 using LiteFlow.Services;
@@ -17,9 +18,7 @@ namespace LiteFlow
     public class LiteFlowUI : UserControl, ILitePlugin, IImageSubscriber
     {
         public string Name => "LiteFlow";
-        public string Version => "1.8.1 (i18n & Compressed Thumbs)";
-
-        public static string CurrentLanguage { get; private set; } = "pt-BR";
+        public string Version => "1.0.0";
 
         private IImagePublisher? _publisher;
         private Queue<Bitmap> _pendingImages = new Queue<Bitmap>();
@@ -76,7 +75,7 @@ namespace LiteFlow
         private TextBox _floatingTextBox = null!;
         private RichTextBox _stepNoteTextBox = null!;
         private CheckBox _chkTextBelowStep = null!;
-        private CheckBox _chkEvidenceOnly = null!; // Checkbox de Apenas Evidência
+        private CheckBox _chkEvidenceOnly = null!;
         private ToolStripComboBox _cmbFont = null!;
         private ToolStripComboBox _cmbSize = null!;
         private PictureBox _templateThumbnail = null!;
@@ -90,7 +89,13 @@ namespace LiteFlow
             _sessionTempDir = Path.Combine(Path.GetTempPath(), "LiteFlowSession_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_sessionTempDir);
 
+            // 1. Carrega APENAS o idioma antes de construir a UI (para os textos ficarem corretos)
+            LoadLanguageOnly();
+
+            // 2. Constrói os controlos da UI (botões, sliders, menus)
             InitializeComponent();
+
+            // 3. Agora que os controlos existem, aplica as cores, espessuras e layouts guardados
             LoadSettings();
 
             _editorCore = new ImageEditorCore(_mainCanvas, _floatingTextBox)
@@ -129,13 +134,18 @@ namespace LiteFlow
         public void Initialize(IImagePublisher publisher, string currentLanguage)
         {
             _publisher = publisher;
-            CurrentLanguage = currentLanguage;
+            LanguageManager.CurrentLanguage = currentLanguage;
 
             if (_btnToggleCapture != null)
             {
                 _btnToggleCapture.Enabled = true;
+                _btnToggleCapture.Text = _isRecording ? LanguageManager.GetString("BtnCapturing") : LanguageManager.GetString("BtnPaused");
                 _btnToggleCapture.BackColor = _isRecording ? Color.LightGreen : Color.LightCoral;
+                _btnToggleCapture.ToolTipText = LanguageManager.GetString("TooltipPause");
             }
+
+            UpdateProjectNameUI();
+            UpdateAutoSaveUI();
         }
 
         public UserControl GetSettingsUI() { return this; }
@@ -206,16 +216,12 @@ namespace LiteFlow
             }
         }
 
-        // =========================================================================
-        // CUTTING: Compressão Extrema de Thumbnails (Poupa Dezenas de MBs de RAM)
-        // =========================================================================
         private Bitmap CreateThumbnail(Bitmap original)
         {
             int w = 140;
             int h = (int)((140.0f / original.Width) * original.Height);
             if (h <= 0) h = 90;
 
-            // Format16bppRgb555 reduz drasticamente o peso na RAM (Aprox 25KB por Thumbnail)
             var thumb = new Bitmap(w, h, PixelFormat.Format16bppRgb555);
             using (var g = Graphics.FromImage(thumb))
             {
@@ -333,7 +339,7 @@ namespace LiteFlow
                         writer.WriteString("ImageDataBase64", base64);
                         writer.WriteString("Note", item.Note ?? "");
                         writer.WriteBoolean("TextBelowImage", item.TextBelowImage);
-                        writer.WriteBoolean("IsEvidenceOnly", item.IsEvidenceOnly); // GRAVA PARA O LITEJSON
+                        writer.WriteBoolean("IsEvidenceOnly", item.IsEvidenceOnly);
                         writer.WriteEndObject();
 
                         base64 = null!;
@@ -413,11 +419,27 @@ namespace LiteFlow
                     _firstLoadDone = true;
                     if (string.IsNullOrEmpty(_currentProjectPath) && _historyRibbon.Controls.Count <= 1)
                     {
-                        var res = MessageBox.Show("Deseja iniciar e salvar um novo projeto LiteFlow agora para ativar o Auto-Save?", "Novo Projeto", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        var res = MessageBox.Show(LanguageManager.GetString("MsgStartNewForAutoSave"), LanguageManager.GetString("TitleNewProject"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                         if (res == DialogResult.Yes) { SaveProjectAs(); }
                     }
                 }
             }));
+        }
+
+        private void LoadLanguageOnly()
+        {
+            try
+            {
+                if (File.Exists(_configPath))
+                {
+                    var lines = File.ReadAllLines(_configPath);
+                    if (lines.Length > 12 && !string.IsNullOrEmpty(lines[12]))
+                    {
+                        LanguageManager.CurrentLanguage = lines[12];
+                    }
+                }
+            }
+            catch { }
         }
 
         private void LoadSettings()
@@ -439,6 +461,7 @@ namespace LiteFlow
                     if (lines.Length > 8 && bool.TryParse(lines[8], out bool isLocked)) _isRibbonLocked = isLocked;
                     if (lines.Length > 10 && Enum.TryParse(lines[10], out LayoutMode lMode)) _defaultLayoutMode = lMode;
                     if (lines.Length > 11 && int.TryParse(lines[11], out int cols)) _defaultMobileColumns = cols;
+                    // Idioma já foi carregado no LoadLanguageOnly, logo ignoramos a linha 12 aqui.
                 }
             }
             catch { }
@@ -455,7 +478,8 @@ namespace LiteFlow
                     _defaultTemplatePath, _defaultQAName, _defaultPrefix, _isRibbonLocked.ToString(),
                     "false",
                     _defaultLayoutMode.ToString(),
-                    _defaultMobileColumns.ToString()
+                    _defaultMobileColumns.ToString(),
+                    LanguageManager.CurrentLanguage
                 };
                 File.WriteAllLines(_configPath, lines);
                 _templateThumbnail?.Invalidate();
@@ -489,23 +513,23 @@ namespace LiteFlow
         {
             _topToolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, BackColor = Color.White, RenderMode = ToolStripRenderMode.Professional, Padding = new Padding(5) };
 
-            _btnToggleCapture = new ToolStripButton("▶️ Captando") { BackColor = Color.LightGray, Enabled = false, ToolTipText = "Modo Standalone (Recurso premium nativo do LiteTools)" };
+            _btnToggleCapture = new ToolStripButton(LanguageManager.GetString("BtnCapturing")) { BackColor = Color.LightGray, Enabled = false, ToolTipText = LanguageManager.GetString("TooltipStandalone") };
             _btnToggleCapture.Click += (s, e) => {
                 _isRecording = !_isRecording;
-                _btnToggleCapture.Text = _isRecording ? "▶️ Captando" : "⏸️ Pausado";
+                _btnToggleCapture.Text = _isRecording ? LanguageManager.GetString("BtnCapturing") : LanguageManager.GetString("BtnPaused");
                 _btnToggleCapture.BackColor = _isRecording ? Color.LightGreen : Color.LightCoral;
             };
 
-            var btnNew = new ToolStripButton("📄 Novo") { ToolTipText = "Novo Projeto" }; btnNew.Click += (s, e) => NewProject();
-            var btnOpen = new ToolStripButton("📂 Abrir") { ToolTipText = "Abrir Projeto" }; btnOpen.Click += (s, e) => OpenProject();
-            var btnSave = new ToolStripButton("💾 Salvar") { ToolTipText = "Salvar Projeto Atual (Ctrl+S)" }; btnSave.Click += (s, e) => SaveProjectCurrent();
-            var btnSaveAs = new ToolStripButton("💾 Salvar Como...") { ToolTipText = "Salvar Projeto Como" }; btnSaveAs.Click += (s, e) => SaveProjectAs();
+            var btnNew = new ToolStripButton(LanguageManager.GetString("BtnNew")) { ToolTipText = LanguageManager.GetString("TooltipNew") }; btnNew.Click += (s, e) => NewProject();
+            var btnOpen = new ToolStripButton(LanguageManager.GetString("BtnOpen")) { ToolTipText = LanguageManager.GetString("TooltipOpen") }; btnOpen.Click += (s, e) => OpenProject();
+            var btnSave = new ToolStripButton(LanguageManager.GetString("BtnSave")) { ToolTipText = LanguageManager.GetString("TooltipSave") }; btnSave.Click += (s, e) => SaveProjectCurrent();
+            var btnSaveAs = new ToolStripButton(LanguageManager.GetString("BtnSaveAs")) { ToolTipText = LanguageManager.GetString("TooltipSaveAs") }; btnSaveAs.Click += (s, e) => SaveProjectAs();
 
-            _btnAutoSaveToggle = new ToolStripButton("🔄 AutoSave: OFF") { ForeColor = Color.Gray, Font = new Font("Segoe UI", 9F, FontStyle.Bold), ToolTipText = "Ligar/Desligar Auto-Save" };
+            _btnAutoSaveToggle = new ToolStripButton(LanguageManager.GetString("AutoSaveOff")) { ForeColor = Color.Gray, Font = new Font("Segoe UI", 9F, FontStyle.Bold), ToolTipText = LanguageManager.GetString("TooltipAutoSave") };
             _btnAutoSaveToggle.Click += (s, e) => {
                 if (string.IsNullOrEmpty(_currentProjectPath))
                 {
-                    MessageBox.Show("Salve o projeto pelo menos uma vez antes de ativar o Auto-Save.", "Aviso", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(LanguageManager.GetString("MsgSaveFirst"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
                 _isAutoSaveEnabled = !_isAutoSaveEnabled;
@@ -526,23 +550,27 @@ namespace LiteFlow
             _cmbSize.SelectedItem = "14";
             _cmbSize.SelectedIndexChanged += (s, e) => { if (_editorCore != null && int.TryParse(_cmbSize.Text, out int size)) { _editorCore.CurrentFontSize = size; SaveSettings(); } };
 
-            _lblProjectName = new ToolStripLabel("📄 Projeto: Não Salvo") { ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Alignment = ToolStripItemAlignment.Right };
+            var btnGlobalSettings = new ToolStripButton("⚙️") { ToolTipText = LanguageManager.GetString("SettingsTitle"), Alignment = ToolStripItemAlignment.Right };
+            btnGlobalSettings.Click += BtnGlobalSettings_Click;
+
+            _lblProjectName = new ToolStripLabel(LanguageManager.GetString("ProjectNotSaved")) { ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Alignment = ToolStripItemAlignment.Right };
 
             var tools = new ToolStripItem[] {
                 _btnToggleCapture, new ToolStripSeparator(),
                 btnNew, btnOpen, btnSave, btnSaveAs, _btnAutoSaveToggle, new ToolStripSeparator(),
                 btnUndo, btnRedo, new ToolStripSeparator(),
-                new ToolStripButton("Seleção") { Tag = EditorTool.Select, ToolTipText = "Redimensionar" },
-                new ToolStripButton("✂️ Crop") { Tag = EditorTool.Crop, ToolTipText = "Arraste e prima ENTER" },
+                new ToolStripButton(LanguageManager.GetString("ToolSelect")) { Tag = EditorTool.Select, ToolTipText = LanguageManager.GetString("TooltipSelect") },
+                new ToolStripButton(LanguageManager.GetString("ToolCrop")) { Tag = EditorTool.Crop, ToolTipText = LanguageManager.GetString("TooltipCrop") },
                 new ToolStripSeparator(),
-                new ToolStripButton("✏️ Caneta") { Tag = EditorTool.Pen },
-                new ToolStripButton("📏 Linha") { Tag = EditorTool.Line },
-                new ToolStripButton("↗️ Seta") { Tag = EditorTool.Arrow, Checked = true },
-                new ToolStripButton("⬜ Forma") { Tag = EditorTool.Shape },
-                new ToolStripButton("🖍️ Marcador") { Tag = EditorTool.Highlight },
-                new ToolStripButton("A Texto") { Tag = EditorTool.Text },
+                new ToolStripButton(LanguageManager.GetString("ToolPen")) { Tag = EditorTool.Pen },
+                new ToolStripButton(LanguageManager.GetString("ToolLine")) { Tag = EditorTool.Line },
+                new ToolStripButton(LanguageManager.GetString("ToolArrow")) { Tag = EditorTool.Arrow, Checked = true },
+                new ToolStripButton(LanguageManager.GetString("ToolShape")) { Tag = EditorTool.Shape },
+                new ToolStripButton(LanguageManager.GetString("ToolHighlight")) { Tag = EditorTool.Highlight },
+                new ToolStripButton(LanguageManager.GetString("ToolText")) { Tag = EditorTool.Text },
                 new ToolStripSeparator(),
-                new ToolStripLabel("Fonte:"), _cmbFont, _cmbSize,
+                new ToolStripLabel(LanguageManager.GetString("LblFont")), _cmbFont, _cmbSize,
+                btnGlobalSettings,
                 _lblProjectName
             };
 
@@ -568,20 +596,81 @@ namespace LiteFlow
             if (string.IsNullOrEmpty(_currentProjectPath))
             {
                 _isAutoSaveEnabled = false;
-                _btnAutoSaveToggle.Text = "🔄 AutoSave: OFF";
+                _btnAutoSaveToggle.Text = LanguageManager.GetString("AutoSaveOff");
                 _btnAutoSaveToggle.ForeColor = Color.Gray;
             }
             else
             {
-                _btnAutoSaveToggle.Text = _isAutoSaveEnabled ? "🔄 AutoSave: ON" : "🔄 AutoSave: OFF";
+                _btnAutoSaveToggle.Text = _isAutoSaveEnabled ? LanguageManager.GetString("AutoSaveOn") : LanguageManager.GetString("AutoSaveOff");
                 _btnAutoSaveToggle.ForeColor = _isAutoSaveEnabled ? Color.Green : Color.Orange;
             }
         }
 
         private void UpdateProjectNameUI()
         {
-            if (string.IsNullOrEmpty(_currentProjectPath)) _lblProjectName.Text = "📄 Projeto: Não Salvo";
-            else _lblProjectName.Text = $"📄 Projeto: {Path.GetFileName(_currentProjectPath)}";
+            if (string.IsNullOrEmpty(_currentProjectPath)) _lblProjectName.Text = LanguageManager.GetString("ProjectNotSaved");
+            else _lblProjectName.Text = string.Format(LanguageManager.GetString("ProjectName"), Path.GetFileName(_currentProjectPath));
+        }
+
+        private void BtnGlobalSettings_Click(object? sender, EventArgs e)
+        {
+            using (Form frm = new Form())
+            {
+                frm.Text = LanguageManager.GetString("SettingsTitle");
+                frm.Size = new Size(400, 260);
+                frm.StartPosition = FormStartPosition.CenterParent;
+                frm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                frm.MaximizeBox = false;
+                frm.MinimizeBox = false;
+                frm.BackColor = Color.White;
+                frm.Font = new Font("Segoe UI", 9F);
+
+                var pbIcon = new PictureBox { Image = SystemIcons.Information.ToBitmap(), Location = new Point(20, 20), Size = new Size(32, 32), SizeMode = PictureBoxSizeMode.Zoom };
+
+                var lblTitle = new Label { Text = LanguageManager.GetString("SettingsHeader"), Font = new Font("Segoe UI", 12F, FontStyle.Bold), Location = new Point(60, 20), AutoSize = true, ForeColor = Color.FromArgb(0, 120, 215) };
+                var lblVersion = new Label { Text = $"{LanguageManager.GetString("SettingsVersion")}{this.Version}", Location = new Point(62, 45), AutoSize = true, ForeColor = Color.DimGray };
+
+                var lblLang = new Label { Text = LanguageManager.GetString("SettingsLanguage"), Location = new Point(62, 80), AutoSize = true };
+                var cmbLang = new ComboBox { Location = new Point(62, 100), Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
+                cmbLang.Items.AddRange(new string[] { "pt-BR", "en-US", "es-ES", "fr-FR", "de-DE", "it-IT" });
+
+                if (cmbLang.Items.Contains(LanguageManager.CurrentLanguage)) cmbLang.SelectedItem = LanguageManager.CurrentLanguage;
+                else cmbLang.SelectedIndex = 0;
+
+                bool isPluginMode = _publisher != null;
+                if (isPluginMode)
+                {
+                    cmbLang.Enabled = false;
+                    var lblInfo = new Label { Text = LanguageManager.GetString("LangManagedByHost"), Location = new Point(220, 102), AutoSize = true, ForeColor = Color.Gray };
+                    frm.Controls.Add(lblInfo);
+                }
+
+                var lnkGithub = new LinkLabel { Text = "GitHub: github.com/eugenio122/LiteFlow", Location = new Point(62, 140), AutoSize = true, LinkColor = Color.FromArgb(0, 120, 215) };
+                lnkGithub.LinkClicked += (s, ev) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/eugenio122/LiteFlow") { UseShellExecute = true });
+
+                var btnOk = new Button { Text = LanguageManager.GetString("BtnSaveClose"), Location = new Point(140, 180), Width = 120, Height = 30, BackColor = Color.FromArgb(0, 120, 215), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+                btnOk.FlatAppearance.BorderSize = 0;
+                btnOk.Click += (s, ev) => {
+                    bool changed = false;
+                    if (!isPluginMode)
+                    {
+                        var sel = cmbLang.SelectedItem?.ToString() ?? "pt-BR";
+                        if (sel != LanguageManager.CurrentLanguage)
+                        {
+                            LanguageManager.CurrentLanguage = sel;
+                            changed = true;
+                        }
+                    }
+                    SaveSettings();
+                    frm.DialogResult = DialogResult.OK;
+                    frm.Close();
+
+                    if (changed) MessageBox.Show(LanguageManager.GetString("MsgRestartRequired"), "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                };
+
+                frm.Controls.AddRange(new Control[] { pbIcon, lblTitle, lblVersion, lblLang, cmbLang, lnkGithub, btnOk });
+                frm.ShowDialog();
+            }
         }
 
         private void SetupEditorArea(Control parent)
@@ -593,9 +682,9 @@ namespace LiteFlow
             Panel notePanel = new Panel { Dock = DockStyle.Top, Height = 65, Padding = new Padding(5), BackColor = Color.WhiteSmoke };
 
             Panel noteHeaderPanel = new Panel { Dock = DockStyle.Top, Height = 25 };
-            Label lblNote = new Label { Text = "📝 Anotações da Evidência:", Dock = DockStyle.Left, AutoSize = true, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold), ForeColor = Color.DimGray, Padding = new Padding(0, 4, 0, 0) };
+            Label lblNote = new Label { Text = LanguageManager.GetString("EvidenceNotes"), Dock = DockStyle.Left, AutoSize = true, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold), ForeColor = Color.DimGray, Padding = new Padding(0, 4, 0, 0) };
 
-            _chkTextBelowStep = new CheckBox { Text = "⬇️ Texto Abaixo da Imagem", Dock = DockStyle.Right, AutoSize = true, Font = new Font("Segoe UI", 8F), ForeColor = Color.DimGray, Cursor = Cursors.Hand, Enabled = false };
+            _chkTextBelowStep = new CheckBox { Text = LanguageManager.GetString("TextBelowImage"), Dock = DockStyle.Right, AutoSize = true, Font = new Font("Segoe UI", 8F), ForeColor = Color.DimGray, Cursor = Cursors.Hand, Enabled = false };
             _chkTextBelowStep.CheckedChanged += (s, e) => {
                 if (_currentEvidence != null && _currentEvidence.TextBelowImage != _chkTextBelowStep.Checked)
                 {
@@ -605,13 +694,12 @@ namespace LiteFlow
                 }
             };
 
-            // NOVO: Checkbox para sinalizar ao LiteJson
-            _chkEvidenceOnly = new CheckBox { Text = "👁️ Apenas Evidência", Dock = DockStyle.Right, AutoSize = true, Font = new Font("Segoe UI", 8F), ForeColor = Color.DimGray, Cursor = Cursors.Hand, Enabled = false };
+            _chkEvidenceOnly = new CheckBox { Text = $"👁️ {LanguageManager.GetString("EvidenceOnly")}", Dock = DockStyle.Right, AutoSize = true, Font = new Font("Segoe UI", 8F), ForeColor = Color.DimGray, Cursor = Cursors.Hand, Enabled = false };
             _chkEvidenceOnly.CheckedChanged += (s, e) => {
                 if (_currentEvidence != null && _currentEvidence.IsEvidenceOnly != _chkEvidenceOnly.Checked)
                 {
                     _currentEvidence.IsEvidenceOnly = _chkEvidenceOnly.Checked;
-                    _currentEvidence.Thumbnail.Invalidate(); // Força o histórico a repintar o selo laranja
+                    _currentEvidence.Thumbnail.Invalidate();
                     _hasUnsavedChanges = true;
                     TriggerAutoSave();
                 }
@@ -624,8 +712,8 @@ namespace LiteFlow
             _stepNoteTextBox = new RichTextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = RichTextBoxScrollBars.Vertical, Enabled = false, BorderStyle = BorderStyle.None };
 
             var ctxMenu = new ContextMenuStrip();
-            ctxMenu.Items.Add("Colar (Manter Formatação) (Ctrl+V)", null, (s, e) => _stepNoteTextBox.Paste());
-            ctxMenu.Items.Add("Colar sem formatação", null, (s, e) => {
+            ctxMenu.Items.Add(LanguageManager.GetString("CtxPasteFormat"), null, (s, e) => _stepNoteTextBox.Paste());
+            ctxMenu.Items.Add(LanguageManager.GetString("CtxPasteNoFormat"), null, (s, e) => {
                 if (Clipboard.ContainsText()) _stepNoteTextBox.SelectedText = Clipboard.GetText(TextDataFormat.Text);
             });
             _stepNoteTextBox.ContextMenuStrip = ctxMenu;
@@ -696,21 +784,21 @@ namespace LiteFlow
                     }
                 }
             };
-            pnlColor.Controls.Add(_btnColorPicker); pnlColor.Controls.Add(new Label { Text = "Cor:", Dock = DockStyle.Top, Height = 20 });
+            pnlColor.Controls.Add(_btnColorPicker); pnlColor.Controls.Add(new Label { Text = LanguageManager.GetString("LblColor"), Dock = DockStyle.Top, Height = 20 });
 
             var pnlThickness = new Panel { Dock = DockStyle.Top, Height = 70, Padding = new Padding(0, 10, 0, 0) };
             _trkThickness = new TrackBar { Dock = DockStyle.Top, Minimum = 1, Maximum = 20, Value = 4, TickStyle = TickStyle.None, Height = 30 };
             _trkThickness.Scroll += (s, e) => { if (_editorCore != null) { _editorCore.CurrentThickness = _trkThickness.Value; SaveSettings(); } };
-            pnlThickness.Controls.Add(_trkThickness); pnlThickness.Controls.Add(new Label { Text = "Espessura (Ctrl+ ou Ctrl-):", Dock = DockStyle.Top, Height = 20 });
+            pnlThickness.Controls.Add(_trkThickness); pnlThickness.Controls.Add(new Label { Text = LanguageManager.GetString("LblThickness"), Dock = DockStyle.Top, Height = 20 });
 
             var pnlExport = new Panel { Dock = DockStyle.Bottom, Height = 145 };
-            var btnSetTemplate = new Button { Text = "Importar Template Layout", Dock = DockStyle.Top, Height = 35, BackColor = Color.WhiteSmoke, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            var btnSetTemplate = new Button { Text = LanguageManager.GetString("BtnImportTemplate"), Dock = DockStyle.Top, Height = 35, BackColor = Color.WhiteSmoke, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
             btnSetTemplate.FlatAppearance.BorderColor = Color.Silver; btnSetTemplate.Click += BtnImportWord_Click;
 
-            var btnWordExport = new Button { Text = "Exportar Histórico WORD", Dock = DockStyle.Top, Height = 45, BackColor = Color.FromArgb(0, 120, 215), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
+            var btnWordExport = new Button { Text = LanguageManager.GetString("BtnExportWord"), Dock = DockStyle.Top, Height = 45, BackColor = Color.FromArgb(0, 120, 215), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
             btnWordExport.FlatAppearance.BorderSize = 0; btnWordExport.Click += BtnExportWord_Click;
 
-            var btnPdf = new Button { Text = "Exportar Histórico PDF", Dock = DockStyle.Top, Height = 45, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
+            var btnPdf = new Button { Text = LanguageManager.GetString("BtnExportPdf"), Dock = DockStyle.Top, Height = 45, BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
             btnPdf.FlatAppearance.BorderSize = 0; btnPdf.Click += BtnApplyToPdf_Click;
 
             pnlExport.Controls.Add(btnPdf); pnlExport.Controls.Add(new Label { Dock = DockStyle.Top, Height = 10 });
@@ -718,7 +806,7 @@ namespace LiteFlow
             pnlExport.Controls.Add(btnSetTemplate);
 
             _propertiesPanel.Controls.Add(pnlThickness); _propertiesPanel.Controls.Add(pnlColor);
-            _propertiesPanel.Controls.Add(new Label { Text = "⚙️ Propriedades", Dock = DockStyle.Top, Font = new Font("Segoe UI", 10F, FontStyle.Bold), Height = 40, TextAlign = ContentAlignment.MiddleLeft });
+            _propertiesPanel.Controls.Add(new Label { Text = LanguageManager.GetString("LblProperties"), Dock = DockStyle.Top, Font = new Font("Segoe UI", 10F, FontStyle.Bold), Height = 40, TextAlign = ContentAlignment.MiddleLeft });
             _propertiesPanel.Controls.Add(pnlExport);
             parent.Controls.Add(_propertiesPanel);
         }
@@ -728,11 +816,11 @@ namespace LiteFlow
             var historyWrapper = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(5) };
 
             Panel headerPanel = new Panel { Dock = DockStyle.Top, Height = 28, Padding = new Padding(0, 0, 0, 3) };
-            Label lblTitle = new Label { Text = "⏱️ Histórico de Capturas", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold) };
+            Label lblTitle = new Label { Text = LanguageManager.GetString("LblHistory"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold) };
 
             FlowLayoutPanel pnlRightButtons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
 
-            _chkLockRibbon = new CheckBox { Appearance = Appearance.Button, Text = "📌 Fixar", Width = 60, Height = 25, FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand };
+            _chkLockRibbon = new CheckBox { Appearance = Appearance.Button, Text = LanguageManager.GetString("BtnPin"), Width = 60, Height = 25, FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand };
             _chkLockRibbon.FlatAppearance.BorderSize = 0;
             _chkLockRibbon.Click += (s, e) => {
                 _isRibbonLocked = _chkLockRibbon.Checked;
@@ -741,7 +829,7 @@ namespace LiteFlow
                 SaveSettings();
             };
 
-            Button btnAddBlank = new Button { Text = "➕ Tela em Branco", Width = 110, Height = 25, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke };
+            Button btnAddBlank = new Button { Text = LanguageManager.GetString("BtnAddBlank"), Width = 110, Height = 25, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke };
             btnAddBlank.FlatAppearance.BorderSize = 0;
             btnAddBlank.Click += (s, e) => {
                 Bitmap blank = new Bitmap(1024, 768);
@@ -754,10 +842,10 @@ namespace LiteFlow
                 });
             };
 
-            Button btnPaste = new Button { Text = "📋 Colar Imagem", Width = 110, Height = 25, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke };
+            Button btnPaste = new Button { Text = LanguageManager.GetString("BtnPasteImage"), Width = 110, Height = 25, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke };
             btnPaste.FlatAppearance.BorderSize = 0;
             btnPaste.Click += (s, e) => {
-                if (!PasteImageFromClipboard()) MessageBox.Show("Não há nenhuma imagem na Área de Transferência.", "Colar", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (!PasteImageFromClipboard()) MessageBox.Show(LanguageManager.GetString("MsgNoImageClipboard"), LanguageManager.GetString("TitlePaste"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
             pnlRightButtons.Controls.Add(_chkLockRibbon);
@@ -776,7 +864,7 @@ namespace LiteFlow
             _templateThumbnail.Click += (s, e) => {
                 string tPath = !string.IsNullOrEmpty(_currentProjectData.TemplatePath) ? _currentProjectData.TemplatePath : _defaultTemplatePath;
                 if (File.Exists(tPath)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tPath) { UseShellExecute = true });
-                else MessageBox.Show("O seu projeto não tem um Template definido.\nClique em 'Importar Template Layout' no painel lateral.", "Template", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                else MessageBox.Show(LanguageManager.GetString("MsgNoTemplate"), LanguageManager.GetString("TitleTemplate"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
             _historyRibbon.Controls.Add(_templateThumbnail);
@@ -801,7 +889,7 @@ namespace LiteFlow
             using (Font f = new Font("Segoe UI", 7, FontStyle.Bold)) { e.Graphics.DrawString("WORD", f, Brushes.White, 53, 11); }
             using (Font f2 = new Font("Segoe UI", 7, FontStyle.Regular))
             {
-                string name = hasTemplate ? Path.GetFileName(tPath) : "Doc. em Branco";
+                string name = hasTemplate ? Path.GetFileName(tPath) : LanguageManager.GetString("BlankDoc");
                 if (name.Length > 20) name = name.Substring(0, 17) + "...";
                 SizeF s = e.Graphics.MeasureString(name, f2);
                 e.Graphics.DrawString(name, f2, Brushes.Black, (_templateThumbnail.Width - s.Width) / 2, 75);
@@ -932,11 +1020,10 @@ namespace LiteFlow
                 e.Graphics.FillEllipse(new SolidBrush(Color.FromArgb(220, 220, 53, 69)), new Rectangle(pb.Width - 28, 4, 22, 22));
                 e.Graphics.DrawString("X", new Font("Segoe UI", 8, FontStyle.Bold), Brushes.White, new Point(pb.Width - 23, 8));
 
-                // NOVO: Selo visual "Apenas Evidência"
                 if (item.IsEvidenceOnly)
                 {
                     e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(220, 255, 140, 0)), new Rectangle(2, pb.Height - 18, 95, 16));
-                    e.Graphics.DrawString("👁️ Evidência", new Font("Segoe UI", 7, FontStyle.Bold), Brushes.White, new Point(4, pb.Height - 17));
+                    e.Graphics.DrawString($"👁️ {LanguageManager.GetString("EvidenceOnly")}", new Font("Segoe UI", 7, FontStyle.Bold), Brushes.White, new Point(4, pb.Height - 17));
                 }
             }
         }
@@ -992,7 +1079,7 @@ namespace LiteFlow
         {
             if (_hasUnsavedChanges && _historyRibbon.Controls.Count > 1)
             {
-                var r = MessageBox.Show("Deseja guardar o projeto atual antes de criar um novo?", "Novo", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                var r = MessageBox.Show(LanguageManager.GetString("MsgSaveBeforeNew"), LanguageManager.GetString("TitleNew"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (r == DialogResult.Cancel) return;
                 if (r == DialogResult.Yes) SaveProjectCurrent();
             }
@@ -1001,7 +1088,7 @@ namespace LiteFlow
             _currentProjectData.ReportLayout = _defaultLayoutMode;
             _currentProjectData.MobileColumns = _defaultMobileColumns;
 
-            _currentProjectData.TemplatePath = (!string.IsNullOrEmpty(_defaultTemplatePath) && File.Exists(_defaultTemplatePath) && MessageBox.Show("Iniciar utilizando o Template Padrão?", "Template", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) ? _defaultTemplatePath : "";
+            _currentProjectData.TemplatePath = (!string.IsNullOrEmpty(_defaultTemplatePath) && File.Exists(_defaultTemplatePath) && MessageBox.Show(LanguageManager.GetString("MsgUseDefaultTemplate"), LanguageManager.GetString("TitleTemplate"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) ? _defaultTemplatePath : "";
 
             ClearEvidenceHistory();
 
@@ -1028,7 +1115,7 @@ namespace LiteFlow
                 _isAutoSaveEnabled = true;
                 UpdateAutoSaveUI();
                 UpdateProjectNameUI();
-                MessageBox.Show("Projeto Salvo com sucesso!", "LiteFlow", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(LanguageManager.GetString("MsgProjectSaved"), LanguageManager.GetString("TitleLiteFlow"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -1052,7 +1139,7 @@ namespace LiteFlow
                     UpdateAutoSaveUI();
                     UpdateProjectNameUI();
 
-                    MessageBox.Show("Projeto Salvo!", "LiteFlow", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(LanguageManager.GetString("MsgProjectSavedShort"), LanguageManager.GetString("TitleLiteFlow"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
         }
@@ -1086,7 +1173,6 @@ namespace LiteFlow
                                 File.WriteAllBytes(path, Convert.FromBase64String(step.ImageDataBase64));
                                 step.ImageDataBase64 = null!;
 
-                                // O novo método Load lê também a Flag
                                 AddToHistoryFromDisk(path, null, step.Note, step.TextBelowImage, step.IsEvidenceOnly);
                             }
 
@@ -1104,7 +1190,7 @@ namespace LiteFlow
                     catch (Exception ex)
                     {
                         _isLoadingProject = false;
-                        MessageBox.Show($"Erro: {ex.Message}");
+                        MessageBox.Show(string.Format(LanguageManager.GetString("MsgError"), ex.Message), LanguageManager.GetString("TitleError"));
                     }
                 }
             }
@@ -1193,14 +1279,14 @@ namespace LiteFlow
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
                     _currentProjectData.TemplatePath = ofd.FileName;
-                    if (MessageBox.Show("Definir como PADRÃO para projetos futuros?", "Padrão", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                    if (MessageBox.Show(LanguageManager.GetString("MsgSetAsDefault"), LanguageManager.GetString("TitleDefault"), MessageBoxButtons.YesNo) == DialogResult.Yes)
                     {
                         Directory.CreateDirectory(_templatesDir);
                         string destPath = Path.Combine(_templatesDir, Path.GetFileName(ofd.FileName));
                         File.Copy(ofd.FileName, destPath, true);
                         _defaultTemplatePath = destPath;
                         SaveSettings();
-                        MessageBox.Show("Template padrão guardado!");
+                        MessageBox.Show(LanguageManager.GetString("MsgTemplateSaved"));
                     }
                     TriggerAutoSave();
                     _templateThumbnail.Invalidate();
@@ -1216,7 +1302,7 @@ namespace LiteFlow
             string templateToUse = !string.IsNullOrEmpty(_currentProjectData.TemplatePath) ? _currentProjectData.TemplatePath : _defaultTemplatePath;
 
             if (string.IsNullOrEmpty(templateToUse) || !File.Exists(templateToUse))
-                MessageBox.Show("Nenhum Template definido. O sistema exportará para um Documento em Branco.", "Aviso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(LanguageManager.GetString("MsgExportNoTemplate"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             using (TemplateDataForm form = new TemplateDataForm(_defaultQAName, _defaultPrefix, _currentProjectData))
             {
@@ -1245,9 +1331,9 @@ namespace LiteFlow
                                 ExportService.ExportToWord(_currentProjectData, itemsToExport, sfd.FileName, form.GetTags());
 
                                 this.Cursor = Cursors.Default;
-                                MessageBox.Show($"Exportação concluída!\n\nVerifique o ficheiro em:\n{sfd.FileName}", "Sucesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                MessageBox.Show(string.Format(LanguageManager.GetString("MsgExportSuccessWord"), sfd.FileName), LanguageManager.GetString("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                             }
-                            catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show($"Erro:\n{ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                            catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show(string.Format(LanguageManager.GetString("MsgError"), ex.Message), LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
                         }
                     }
                 }
@@ -1261,7 +1347,7 @@ namespace LiteFlow
 
             string templateToUse = !string.IsNullOrEmpty(_currentProjectData.TemplatePath) ? _currentProjectData.TemplatePath : _defaultTemplatePath;
             if (string.IsNullOrEmpty(templateToUse) || !File.Exists(templateToUse))
-                MessageBox.Show("Nenhum Template definido. O sistema exportará para um Documento em Branco.", "Aviso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(LanguageManager.GetString("MsgExportNoTemplate"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             using (TemplateDataForm form = new TemplateDataForm(_defaultQAName, _defaultPrefix, _currentProjectData))
             {
@@ -1290,9 +1376,9 @@ namespace LiteFlow
                                 ExportService.ExportToPdf(_currentProjectData, itemsToExport, sfd.FileName, form.GetTags());
 
                                 this.Cursor = Cursors.Default;
-                                MessageBox.Show("PDF gerado com o layout do Word e formatado com sucesso!", "LiteFlow PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                MessageBox.Show(LanguageManager.GetString("MsgExportSuccessPdf"), LanguageManager.GetString("TitleLiteFlowPdf"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                             }
-                            catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show($"Erro PDF:\n{ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                            catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show(string.Format(LanguageManager.GetString("MsgErrorPdf"), ex.Message), LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
                         }
                     }
                 }

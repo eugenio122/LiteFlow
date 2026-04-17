@@ -14,6 +14,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ApplicationIcon>LiteFlow-Logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
