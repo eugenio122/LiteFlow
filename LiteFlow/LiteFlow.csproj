@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Utilizando o SDK 10.0 com foco em Windows (necessário para WinForms e Bitmap) -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+
+    <!-- DUAL MODE: WinExe gera o LiteFlow.exe (Standalone) E a LiteFlow.dll (Plugin) simultaneamente -->
+    <OutputType>WinExe</OutputType>
+
+    <!-- Habilitando o Windows Forms para a nossa UI de configurações e Atalhos -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- Boas práticas modernas do C# -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- O nosso Motor Invisível: DocumentFormat.OpenXml -->
+    <!-- Ele será responsável por abrir e editar o .docx sem precisar do Word instalado -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="LiteTools.Interfaces">
+      <HintPath>..\..\LiteTools\LiteTools\bin\Debug\net10.0-windows\LiteTools.Interfaces.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
