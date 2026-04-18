@@ -89,13 +89,8 @@ namespace LiteFlow
             _sessionTempDir = Path.Combine(Path.GetTempPath(), "LiteFlowSession_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_sessionTempDir);
 
-            // 1. Carrega APENAS o idioma antes de construir a UI (para os textos ficarem corretos)
             LoadLanguageOnly();
-
-            // 2. Constrói os controlos da UI (botões, sliders, menus)
             InitializeComponent();
-
-            // 3. Agora que os controlos existem, aplica as cores, espessuras e layouts guardados
             LoadSettings();
 
             _editorCore = new ImageEditorCore(_mainCanvas, _floatingTextBox)
@@ -150,8 +145,20 @@ namespace LiteFlow
 
         public UserControl GetSettingsUI() { return this; }
 
+        // =========================================================================
+        // PROTEÇÃO CONTRA SHUTDOWN: Pergunta antes de matar o plugin
+        // =========================================================================
         public void Shutdown()
         {
+            if (_hasUnsavedChanges && _historyRibbon.Controls.Count > 1)
+            {
+                var r = MessageBox.Show(LanguageManager.GetString("MsgUnsavedShutdown"), LanguageManager.GetString("Warning"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (r == DialogResult.Yes)
+                {
+                    SaveProjectCurrent();
+                }
+            }
+
             ClearEvidenceHistory();
             try { if (Directory.Exists(_sessionTempDir)) Directory.Delete(_sessionTempDir, true); } catch { }
         }
@@ -296,11 +303,12 @@ namespace LiteFlow
                 if (t is ToolStripButton b && b.Tag is EditorTool et && et == EditorTool.Select) { b.PerformClick(); break; }
         }
 
-        private void SaveProjectInternal(string path)
+        private void SaveProjectInternal(string path, bool isAutoSave = false)
         {
+            string tempPath = path + ".tmp";
             try
             {
-                using (var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 using (var writer = new System.Text.Json.Utf8JsonWriter(fileStream))
                 {
                     writer.WriteStartObject();
@@ -348,10 +356,45 @@ namespace LiteFlow
                     writer.WriteEndArray();
                     writer.WriteEndObject();
                 }
-            }
-            catch { }
 
-            GC.Collect(2, GCCollectionMode.Forced, true);
+                if (File.Exists(path))
+                {
+                    File.Replace(tempPath, path, null, true);
+                }
+                else
+                {
+                    File.Move(tempPath, path);
+                }
+
+                if (!isAutoSave)
+                {
+                    _hasUnsavedChanges = false;
+                    _isAutoSaveEnabled = true;
+                    UpdateAutoSaveUI();
+                    UpdateProjectNameUI();
+                    MessageBox.Show(LanguageManager.GetString("MsgProjectSaved"), LanguageManager.GetString("TitleLiteFlow"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    _hasUnsavedChanges = false;
+                }
+            }
+            catch (IOException)
+            {
+                if (!isAutoSave)
+                {
+                    MessageBox.Show("O arquivo está temporariamente bloqueado, possivelmente devido à sincronização do OneDrive.\n\nAguarde o ícone de nuvem atualizar e tente salvar novamente.", "Arquivo Bloqueado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!isAutoSave) MessageBox.Show($"Erro ao salvar: {ex.Message}", LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) { try { File.Delete(tempPath); } catch { } }
+                GC.Collect(2, GCCollectionMode.Forced, true);
+            }
         }
 
         private void InitializeComponent()
@@ -461,7 +504,6 @@ namespace LiteFlow
                     if (lines.Length > 8 && bool.TryParse(lines[8], out bool isLocked)) _isRibbonLocked = isLocked;
                     if (lines.Length > 10 && Enum.TryParse(lines[10], out LayoutMode lMode)) _defaultLayoutMode = lMode;
                     if (lines.Length > 11 && int.TryParse(lines[11], out int cols)) _defaultMobileColumns = cols;
-                    // Idioma já foi carregado no LoadLanguageOnly, logo ignoramos a linha 12 aqui.
                 }
             }
             catch { }
@@ -1070,8 +1112,7 @@ namespace LiteFlow
             _hasUnsavedChanges = true;
             if (!string.IsNullOrEmpty(_currentProjectPath))
             {
-                SaveProjectInternal(_currentProjectPath);
-                _hasUnsavedChanges = false;
+                SaveProjectInternal(_currentProjectPath, true);
             }
         }
 
@@ -1109,13 +1150,7 @@ namespace LiteFlow
             }
             else
             {
-                SaveProjectInternal(_currentProjectPath);
-                _hasUnsavedChanges = false;
-
-                _isAutoSaveEnabled = true;
-                UpdateAutoSaveUI();
-                UpdateProjectNameUI();
-                MessageBox.Show(LanguageManager.GetString("MsgProjectSaved"), LanguageManager.GetString("TitleLiteFlow"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SaveProjectInternal(_currentProjectPath, false);
             }
         }
 
@@ -1132,14 +1167,7 @@ namespace LiteFlow
                         _currentProjectData.FileName = Path.GetFileNameWithoutExtension(_currentProjectPath);
                     }
 
-                    SaveProjectInternal(_currentProjectPath);
-                    _hasUnsavedChanges = false;
-
-                    _isAutoSaveEnabled = true;
-                    UpdateAutoSaveUI();
-                    UpdateProjectNameUI();
-
-                    MessageBox.Show(LanguageManager.GetString("MsgProjectSavedShort"), LanguageManager.GetString("TitleLiteFlow"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    SaveProjectInternal(_currentProjectPath, false);
                 }
             }
         }
@@ -1186,6 +1214,11 @@ namespace LiteFlow
                             UpdateAutoSaveUI();
                             UpdateProjectNameUI();
                         }
+                    }
+                    catch (IOException ex)
+                    {
+                        _isLoadingProject = false;
+                        MessageBox.Show($"Não foi possível carregar o projeto. O arquivo pode estar bloqueado pelo OneDrive ou outro processo de sincronização.\n\nAguarde o ícone de nuvem atualizar e tente novamente.\n\nDetalhe: {ex.Message}", "Arquivo Bloqueado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                     catch (Exception ex)
                     {
