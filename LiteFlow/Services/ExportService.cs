@@ -1,76 +1,47 @@
 ﻿using LiteFlow.Models;
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 
 namespace LiteFlow.Services
 {
     public static class ExportService
     {
-        private static string GetStateHash(LiteFlowProjectData project, List<EvidenceItem> items, Dictionary<string, string> tags)
-        {
-            using (var sha256 = SHA256.Create())
-            {
-                string rawData = string.Join("", tags.Values) + items.Count.ToString() + project.ReportLayout.ToString() + project.MobileColumns;
-                foreach (var i in items) rawData += i.Note + (i.TextBelowImage ? "B" : "T");
-
-                byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawData));
-                return BitConverter.ToString(hashBytes).Replace("-", "").Substring(0, 16);
-            }
-        }
-
-        private static string GetDynamicCachePath(string hash)
-        {
-            return Path.Combine(Path.GetTempPath(), $"liteflow_cache_{hash}.docx");
-        }
-
-        private static void CleanOldCacheFiles()
-        {
-            try
-            {
-                var tempDir = Path.GetTempPath();
-                var cacheFiles = Directory.GetFiles(tempDir, "liteflow_cache_*.docx");
-                foreach (var file in cacheFiles)
-                {
-                    if (File.GetLastWriteTime(file) < DateTime.Now.AddDays(-1)) { try { File.Delete(file); } catch { } }
-                }
-            }
-            catch { }
-        }
-
         public static void ExportToWord(LiteFlowProjectData project, List<EvidenceItem> items, string userChosenPath, Dictionary<string, string> tags)
         {
-            string currentHash = GetStateHash(project, items, tags);
-            string cachePath = GetDynamicCachePath(currentHash);
+            // Garante que não há conflito se o utilizador for sobrescrever um ficheiro existente
+            if (File.Exists(userChosenPath))
+            {
+                File.Delete(userChosenPath);
+            }
 
-            if (!File.Exists(cachePath)) GenerateWordToCache(project, items, tags, cachePath);
-
-            if (File.Exists(userChosenPath)) File.Delete(userChosenPath);
-            File.Copy(cachePath, userChosenPath);
+            // Gera o Word diretamente no caminho final (sem caches pelo meio)
+            WordDocumentEngine.PrepareDocument(project.TemplatePath, userChosenPath, tags);
+            WordDocumentEngine.AppendAllEvidence(items, userChosenPath, project);
         }
 
         public static void ExportToPdf(LiteFlowProjectData project, List<EvidenceItem> items, string userChosenPath, Dictionary<string, string> tags)
         {
-            string currentHash = GetStateHash(project, items, tags);
-            string cachePath = GetDynamicCachePath(currentHash);
+            // 1. Gera um nome ÚNICO para o ficheiro temporário, garantindo que NUNCA usa cache
+            string tempWordFile = Path.Combine(Path.GetTempPath(), $"ExportTemp_{Guid.NewGuid():N}.docx");
 
-            if (!File.Exists(cachePath)) GenerateWordToCache(project, items, tags, cachePath);
+            try
+            {
+                // 2. FORÇA a criação de um Word fresquinho com os dados da UI mais recentes
+                WordDocumentEngine.PrepareDocument(project.TemplatePath, tempWordFile, tags);
+                WordDocumentEngine.AppendAllEvidence(items, tempWordFile, project);
 
-            ConvertDocxToPdf(cachePath, userChosenPath);
-        }
-
-        private static void GenerateWordToCache(LiteFlowProjectData project, List<EvidenceItem> items, Dictionary<string, string> tags, string cachePath)
-        {
-            CleanOldCacheFiles();
-            if (File.Exists(cachePath)) File.Delete(cachePath);
-
-            WordDocumentEngine.PrepareDocument(project.TemplatePath, cachePath, tags);
-            WordDocumentEngine.AppendAllEvidence(items, cachePath, project);
+                // 3. Converte o arquivo recém-gerado para PDF
+                ConvertDocxToPdf(tempWordFile, userChosenPath);
+            }
+            finally
+            {
+                // 4. Limpeza imediata! Exclui o arquivo temporário independentemente de erro ou sucesso
+                if (File.Exists(tempWordFile))
+                {
+                    try { File.Delete(tempWordFile); } catch { }
+                }
+            }
         }
 
         private static void ConvertDocxToPdf(string docxPath, string pdfPath)

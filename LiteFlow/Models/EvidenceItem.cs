@@ -5,6 +5,7 @@ namespace LiteFlow.Models
 {
     public class EvidenceItem
     {
+        public string StepId { get; set; } = Guid.NewGuid().ToString("N");
         public Bitmap Image { get; set; } = null!;
         public string Note { get; set; } = "";
         public bool TextBelowImage { get; set; } = false;

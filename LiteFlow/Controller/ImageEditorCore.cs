@@ -19,8 +19,10 @@ namespace LiteFlow.Controller
         public int CurrentFontSize { get; set; } = 14;
 
         public Bitmap? WorkingImage { get; private set; }
-        private Stack<Bitmap> _undoStack = new Stack<Bitmap>();
+
+        private List<Bitmap> _undoStack = new List<Bitmap>();
         private Stack<Bitmap> _redoStack = new Stack<Bitmap>();
+        private const int MAX_UNDO_STEPS = 10;
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
@@ -33,9 +35,15 @@ namespace LiteFlow.Controller
         private Point _screenStart;
         private Point _screenCurrent;
 
+        // CROP INTERATIVO
         private Rectangle _cropRect;
+        private bool _isAdjustingCrop = false;
         private int _activeResizeHandle = -1;
         private const int HANDLE_SIZE = 8;
+
+        // CROP - Variáveis temporárias para cálculo de resize seguro
+        private Rectangle _cropStartRect;
+        private Point _resizeStartPoint;
 
         public ImageEditorCore(PictureBox canvas, TextBox floatingTextBox)
         {
@@ -51,12 +59,25 @@ namespace LiteFlow.Controller
             _floatingTextBox.Leave += FloatingTextBox_Leave;
         }
 
-        // ======================================================================
-        // Limpeza Destrutiva das Pilhas (Mata o vazamento de 1GB RAM)
-        // ======================================================================
+        private void PushUndo()
+        {
+            if (WorkingImage == null) return;
+
+            _undoStack.Add(new Bitmap(WorkingImage));
+
+            if (_undoStack.Count > MAX_UNDO_STEPS)
+            {
+                _undoStack[0]?.Dispose();
+                _undoStack.RemoveAt(0);
+            }
+
+            ClearRedoStack();
+        }
+
         private void ClearStacks()
         {
-            while (_undoStack.Count > 0) _undoStack.Pop()?.Dispose();
+            foreach (var bmp in _undoStack) bmp?.Dispose();
+            _undoStack.Clear();
             while (_redoStack.Count > 0) _redoStack.Pop()?.Dispose();
         }
 
@@ -64,11 +85,10 @@ namespace LiteFlow.Controller
         {
             while (_redoStack.Count > 0) _redoStack.Pop()?.Dispose();
         }
-        // ======================================================================
 
         public void LoadImage(Bitmap img)
         {
-            ClearStacks(); // Limpa a memória lixo do GDI+ antes de carregar nova imagem
+            ClearStacks();
             WorkingImage?.Dispose();
             WorkingImage = new Bitmap(img);
             _canvas.Image = WorkingImage;
@@ -81,7 +101,10 @@ namespace LiteFlow.Controller
             {
                 _redoStack.Push(new Bitmap(WorkingImage!));
                 WorkingImage?.Dispose();
-                WorkingImage = _undoStack.Pop();
+
+                WorkingImage = _undoStack[_undoStack.Count - 1];
+                _undoStack.RemoveAt(_undoStack.Count - 1);
+
                 _canvas.Image = WorkingImage;
                 OnImageEdited?.Invoke();
                 _canvas.Invalidate();
@@ -92,7 +115,7 @@ namespace LiteFlow.Controller
         {
             if (_redoStack.Count > 0)
             {
-                _undoStack.Push(new Bitmap(WorkingImage!));
+                _undoStack.Add(new Bitmap(WorkingImage!));
                 WorkingImage?.Dispose();
                 WorkingImage = _redoStack.Pop();
                 _canvas.Image = WorkingImage;
@@ -105,6 +128,9 @@ namespace LiteFlow.Controller
         {
             _floatingTextBox.Visible = false;
             _cropRect = Rectangle.Empty;
+            _isAdjustingCrop = false;
+            _isDrawing = false;
+            _activeResizeHandle = -1;
             _canvas.Invalidate();
         }
 
@@ -138,20 +164,50 @@ namespace LiteFlow.Controller
         {
             int hs = HANDLE_SIZE;
             return new Rectangle[] {
-                new Rectangle(bounds.Left - hs/2, bounds.Top - hs/2, hs, hs),
-                new Rectangle(bounds.Left + bounds.Width/2 - hs/2, bounds.Top - hs/2, hs, hs),
-                new Rectangle(bounds.Right - hs/2, bounds.Top - hs/2, hs, hs),
-                new Rectangle(bounds.Right - hs/2, bounds.Top + bounds.Height/2 - hs/2, hs, hs),
-                new Rectangle(bounds.Right - hs/2, bounds.Bottom - hs/2, hs, hs),
-                new Rectangle(bounds.Left + bounds.Width/2 - hs/2, bounds.Bottom - hs/2, hs, hs),
-                new Rectangle(bounds.Left - hs/2, bounds.Bottom - hs/2, hs, hs),
-                new Rectangle(bounds.Left - hs/2, bounds.Top + bounds.Height/2 - hs/2, hs, hs)
+                new Rectangle(bounds.Left - hs/2, bounds.Top - hs/2, hs, hs), // 0: Top-Left
+                new Rectangle(bounds.Left + bounds.Width/2 - hs/2, bounds.Top - hs/2, hs, hs), // 1: Top-Center
+                new Rectangle(bounds.Right - hs/2, bounds.Top - hs/2, hs, hs), // 2: Top-Right
+                new Rectangle(bounds.Right - hs/2, bounds.Top + bounds.Height/2 - hs/2, hs, hs), // 3: Right-Center
+                new Rectangle(bounds.Right - hs/2, bounds.Bottom - hs/2, hs, hs), // 4: Bottom-Right
+                new Rectangle(bounds.Left + bounds.Width/2 - hs/2, bounds.Bottom - hs/2, hs, hs), // 5: Bottom-Center
+                new Rectangle(bounds.Left - hs/2, bounds.Bottom - hs/2, hs, hs), // 6: Bottom-Left
+                new Rectangle(bounds.Left - hs/2, bounds.Top + bounds.Height/2 - hs/2, hs, hs) // 7: Left-Center
             };
         }
 
         private void Canvas_MouseDown(object? sender, MouseEventArgs e)
         {
+            // OBRIGATÓRIO PARA O CTRL+Z FUNCIONAR! Ao clicar, devolve o foco do OS para a imagem.
+            _canvas.Focus();
+
             if (e.Button != MouseButtons.Left || WorkingImage == null) return;
+
+            // Lógica do CROP: Começar a máscara ou redimensionar máscara
+            if (CurrentTool == EditorTool.Crop)
+            {
+                if (_isAdjustingCrop)
+                {
+                    var handles = GetSelectionHandles(_cropRect);
+                    for (int i = 0; i < handles.Length; i++)
+                    {
+                        if (handles[i].Contains(e.Location))
+                        {
+                            _activeResizeHandle = i;
+                            _isDrawing = true;
+                            _cropStartRect = _cropRect;
+                            _resizeStartPoint = e.Location;
+                            return;
+                        }
+                    }
+                    // Se clicou fora, cria novo crop
+                    _isAdjustingCrop = false;
+                }
+
+                _isDrawing = true;
+                _screenStart = e.Location;
+                _cropRect = new Rectangle(e.Location, new Size(0, 0));
+                return;
+            }
 
             if (CurrentTool == EditorTool.Select)
             {
@@ -161,8 +217,7 @@ namespace LiteFlow.Controller
                     if (handles[i].Contains(e.Location) && (i == 3 || i == 4 || i == 5))
                     {
                         _activeResizeHandle = i; _isDrawing = true;
-                        _undoStack.Push(new Bitmap(WorkingImage));
-                        ClearRedoStack(); // GC Fix
+                        PushUndo();
                         return;
                     }
                 }
@@ -171,8 +226,7 @@ namespace LiteFlow.Controller
             if (CurrentTool == EditorTool.Text)
             {
                 if (_floatingTextBox.Visible) { CommitText(); return; }
-                _undoStack.Push(new Bitmap(WorkingImage));
-                ClearRedoStack(); // GC Fix
+                PushUndo();
                 _imageStart = GetImageCoords(e.Location);
                 _floatingTextBox.Font = new Font(CurrentFontFamily, CurrentFontSize, FontStyle.Bold);
                 _floatingTextBox.ForeColor = CurrentColor;
@@ -184,11 +238,11 @@ namespace LiteFlow.Controller
                 return;
             }
 
+            // Ferramentas normais de desenho
             _isDrawing = true;
             _screenStart = e.Location;
             _imageStart = GetImageCoords(e.Location);
-            _undoStack.Push(new Bitmap(WorkingImage));
-            ClearRedoStack(); // GC Fix
+            PushUndo();
         }
 
         private void Canvas_MouseMove(object? sender, MouseEventArgs e)
@@ -201,12 +255,62 @@ namespace LiteFlow.Controller
                 {
                     if (handles[i].Contains(e.Location) && (i == 3 || i == 4 || i == 5)) { onHandle = true; break; }
                 }
-                _canvas.Cursor = onHandle ? Cursors.SizeAll : Cursors.Default;
+                _canvas.Cursor = onHandle ? Cursors.SizeNWSE : Cursors.Default;
+            }
+            else if (CurrentTool == EditorTool.Crop && !_isDrawing && _isAdjustingCrop)
+            {
+                var handles = GetSelectionHandles(_cropRect);
+                bool onHandle = false;
+                for (int i = 0; i < handles.Length; i++)
+                {
+                    if (handles[i].Contains(e.Location)) { onHandle = true; break; }
+                }
+                _canvas.Cursor = onHandle ? Cursors.Cross : Cursors.Default;
             }
 
             if (!_isDrawing || WorkingImage == null) return;
 
             _screenCurrent = e.Location;
+
+            // Redimensionamento de CROP Activo
+            if (CurrentTool == EditorTool.Crop)
+            {
+                if (_activeResizeHandle != -1)
+                {
+                    int dx = e.Location.X - _resizeStartPoint.X;
+                    int dy = e.Location.Y - _resizeStartPoint.Y;
+
+                    Rectangle newRect = _cropStartRect;
+
+                    if (_activeResizeHandle == 0 || _activeResizeHandle == 6 || _activeResizeHandle == 7) // Puxou p/ esquerda
+                    { newRect.X += dx; newRect.Width -= dx; }
+
+                    if (_activeResizeHandle == 0 || _activeResizeHandle == 1 || _activeResizeHandle == 2) // Puxou p/ cima
+                    { newRect.Y += dy; newRect.Height -= dy; }
+
+                    if (_activeResizeHandle == 2 || _activeResizeHandle == 3 || _activeResizeHandle == 4) // Puxou p/ direita
+                    { newRect.Width += dx; }
+
+                    if (_activeResizeHandle == 4 || _activeResizeHandle == 5 || _activeResizeHandle == 6) // Puxou p/ baixo
+                    { newRect.Height += dy; }
+
+                    // Garante que não invete as dimensões se forçar o rato pro lado oposto
+                    if (newRect.Width > 0 && newRect.Height > 0)
+                        _cropRect = newRect;
+                }
+                else
+                {
+                    // A desenhar crop novo
+                    int x = Math.Min(_screenStart.X, _screenCurrent.X);
+                    int y = Math.Min(_screenStart.Y, _screenCurrent.Y);
+                    int w = Math.Abs(_screenStart.X - _screenCurrent.X);
+                    int h = Math.Abs(_screenStart.Y - _screenCurrent.Y);
+                    _cropRect = new Rectangle(x, y, w, h);
+                }
+                _canvas.Invalidate();
+                return;
+            }
+
             _imageCurrent = GetImageCoords(e.Location, _activeResizeHandle == -1);
 
             if (_activeResizeHandle != -1) { _canvas.Invalidate(); return; }
@@ -233,6 +337,22 @@ namespace LiteFlow.Controller
             if (!_isDrawing || WorkingImage == null) return;
             _isDrawing = false;
 
+            if (CurrentTool == EditorTool.Crop)
+            {
+                if (_cropRect.Width > 10 && _cropRect.Height > 10)
+                {
+                    _isAdjustingCrop = true;
+                }
+                else
+                {
+                    _isAdjustingCrop = false;
+                    _cropRect = Rectangle.Empty;
+                }
+                _activeResizeHandle = -1;
+                _canvas.Invalidate();
+                return;
+            }
+
             if (_activeResizeHandle != -1)
             {
                 int newW = WorkingImage.Width;
@@ -252,8 +372,6 @@ namespace LiteFlow.Controller
 
                 _activeResizeHandle = -1; _canvas.Invalidate(); return;
             }
-
-            if (CurrentTool == EditorTool.Crop) { _canvas.Invalidate(); return; }
 
             if (CurrentTool != EditorTool.Pen && CurrentTool != EditorTool.Highlight && CurrentTool != EditorTool.Text)
             {
@@ -278,6 +396,34 @@ namespace LiteFlow.Controller
         {
             if (WorkingImage == null) return;
 
+            // PINTURA DO CROP: Sobreposição escura com o "buraco" claro no meio
+            if (CurrentTool == EditorTool.Crop && (_isDrawing || _isAdjustingCrop) && _cropRect.Width > 0 && _cropRect.Height > 0)
+            {
+                Region overlayRegion = new Region(new Rectangle(0, 0, _canvas.Width, _canvas.Height));
+                overlayRegion.Exclude(_cropRect);
+
+                using (Brush dimBrush = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
+                {
+                    e.Graphics.FillRegion(dimBrush, overlayRegion);
+                }
+
+                using (Pen p = new Pen(Color.White, 1) { DashStyle = DashStyle.Dash })
+                {
+                    e.Graphics.DrawRectangle(p, _cropRect);
+                }
+
+                if (_isAdjustingCrop)
+                {
+                    var handles = GetSelectionHandles(_cropRect);
+                    foreach (var handle in handles)
+                    {
+                        e.Graphics.FillRectangle(Brushes.White, handle);
+                        e.Graphics.DrawRectangle(Pens.Black, handle);
+                    }
+                }
+                return;
+            }
+
             if (CurrentTool == EditorTool.Select && _activeResizeHandle == -1)
             {
                 var bounds = GetImageScreenBounds();
@@ -293,7 +439,7 @@ namespace LiteFlow.Controller
                 }
             }
 
-            if (_activeResizeHandle != -1)
+            if (_activeResizeHandle != -1 && CurrentTool != EditorTool.Crop)
             {
                 int newW = WorkingImage.Width;
                 int newH = WorkingImage.Height;
@@ -308,14 +454,7 @@ namespace LiteFlow.Controller
                     e.Graphics.DrawRectangle(p, ox, oy, (int)(newW * ratio), (int)(newH * ratio));
             }
 
-            if (_isDrawing && CurrentTool == EditorTool.Crop)
-            {
-                int x = Math.Min(_screenStart.X, _screenCurrent.X); int y = Math.Min(_screenStart.Y, _screenCurrent.Y);
-                int w = Math.Abs(_screenStart.X - _screenCurrent.X); int h = Math.Abs(_screenStart.Y - _screenCurrent.Y);
-                _cropRect = new Rectangle(x, y, w, h);
-                using (Pen p = new Pen(Color.Red, 2) { DashStyle = DashStyle.Dash }) e.Graphics.DrawRectangle(p, _cropRect);
-            }
-            else if (_isDrawing && CurrentTool != EditorTool.Pen && CurrentTool != EditorTool.Highlight && CurrentTool != EditorTool.Select && CurrentTool != EditorTool.Text)
+            if (_isDrawing && CurrentTool != EditorTool.Pen && CurrentTool != EditorTool.Highlight && CurrentTool != EditorTool.Select && CurrentTool != EditorTool.Text && CurrentTool != EditorTool.Crop)
             {
                 using (Pen p = new Pen(CurrentColor, CurrentThickness))
                 {
@@ -331,19 +470,30 @@ namespace LiteFlow.Controller
         public void ConfirmCrop()
         {
             if (_cropRect == Rectangle.Empty || WorkingImage == null) return;
+
+            // Converte o retângulo do ecrã para as dimensões reais da imagem
             Point p1 = GetImageCoords(new Point(_cropRect.Left, _cropRect.Top));
             Point p2 = GetImageCoords(new Point(_cropRect.Right, _cropRect.Bottom));
+
             int x = Math.Max(0, p1.X); int y = Math.Max(0, p1.Y);
-            int w = Math.Min(WorkingImage.Width - x, p2.X - p1.X); int h = Math.Min(WorkingImage.Height - y, p2.Y - p1.Y);
+            int w = Math.Min(WorkingImage.Width - x, p2.X - p1.X);
+            int h = Math.Min(WorkingImage.Height - y, p2.Y - p1.Y);
+
             if (w <= 0 || h <= 0) { CancelCurrentAction(); return; }
 
-            _undoStack.Push(new Bitmap(WorkingImage));
-            ClearRedoStack(); // GC Fix
+            PushUndo();
 
             Bitmap cropped = new Bitmap(w, h);
-            using (Graphics g = Graphics.FromImage(cropped)) { g.DrawImage(WorkingImage, new Rectangle(0, 0, w, h), new Rectangle(x, y, w, h), GraphicsUnit.Pixel); }
-            WorkingImage.Dispose(); WorkingImage = cropped; _canvas.Image = WorkingImage;
-            CancelCurrentAction(); OnImageEdited?.Invoke();
+            using (Graphics g = Graphics.FromImage(cropped))
+            {
+                g.DrawImage(WorkingImage, new Rectangle(0, 0, w, h), new Rectangle(x, y, w, h), GraphicsUnit.Pixel);
+            }
+            WorkingImage.Dispose();
+            WorkingImage = cropped;
+            _canvas.Image = WorkingImage;
+
+            CancelCurrentAction();
+            OnImageEdited?.Invoke();
         }
 
         private void FloatingTextBox_KeyDown(object? sender, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) CancelCurrentAction(); }
@@ -366,8 +516,12 @@ namespace LiteFlow.Controller
             }
             else
             {
-                var imgToDispose = _undoStack.Pop();
-                imgToDispose?.Dispose(); // GC Fix: Descarta a cópia se não escreveu nada
+                if (_undoStack.Count > 0)
+                {
+                    var imgToDispose = _undoStack[_undoStack.Count - 1];
+                    _undoStack.RemoveAt(_undoStack.Count - 1);
+                    imgToDispose?.Dispose();
+                }
             }
             CancelCurrentAction();
         }
