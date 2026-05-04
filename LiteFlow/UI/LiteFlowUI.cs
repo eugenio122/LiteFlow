@@ -18,7 +18,7 @@ namespace LiteFlow.UI
     public partial class LiteFlowUI : UserControl, ILitePlugin
     {
         public string Name => "LiteFlow";
-        public string Version => "1.0.0 (Spatial Memory Management)";
+        public string Version => "1.5.1 (Codebase Cleanup)";
 
         private IEventBus? _eventBus;
         private ILiteHostContext? _hostContext;
@@ -37,6 +37,8 @@ namespace LiteFlow.UI
         private string _defaultTemplatePath = "";
         private string _defaultQAName = "";
         private string _defaultPrefix = "";
+        private string _defaultExportPath = "";
+
         private bool _isRecording = true;
         private bool _isAutoSaveEnabled = false;
 
@@ -107,6 +109,12 @@ namespace LiteFlow.UI
         private RichTextBox _txtPropComments = null!;
         private ComboBox _cmbPropLayout = null!;
         private NumericUpDown _numPropCols = null!;
+
+        // ELEMENTOS DA PIPELINE DE EXPORTAÇÃO
+        private TextBox _txtExportPath = null!;
+        private CheckBox _chkExportWord = null!;
+        private CheckBox _chkExportPdf = null!;
+        private Button _btnExportAll = null!;
 
         public LiteFlowUI()
         {
@@ -272,27 +280,21 @@ namespace LiteFlow.UI
             return thumb;
         }
 
-        // =========================================================================
-        // GESTÃO ESPACIAL DE MEMÓRIA (Mantém na RAM: Alvo, Esquerda e Direita)
-        // =========================================================================
         private void ManageMemoryFocus(EvidenceItem activeItem)
         {
-            var allItems = GetItems(); // Lê a ordem visual atual
+            var allItems = GetItems();
             int activeIndex = allItems.IndexOf(activeItem);
             if (activeIndex == -1) return;
 
-            // Define o grupo VIP (Regra de 3)
             var itemsToKeep = new HashSet<EvidenceItem>();
             itemsToKeep.Add(activeItem);
-            if (activeIndex > 0) itemsToKeep.Add(allItems[activeIndex - 1]); // Vizinho da esquerda
-            if (activeIndex < allItems.Count - 1) itemsToKeep.Add(allItems[activeIndex + 1]); // Vizinho da direita
+            if (activeIndex > 0) itemsToKeep.Add(allItems[activeIndex - 1]);
+            if (activeIndex < allItems.Count - 1) itemsToKeep.Add(allItems[activeIndex + 1]);
 
-            // Varre todas as imagens e liberta/carrega conforme necessário
             foreach (var item in allItems)
             {
                 if (itemsToKeep.Contains(item))
                 {
-                    // Carrega do disco caso seja vizinho e não esteja na RAM
                     if (item.Image == null && !string.IsNullOrEmpty(item.DiskPath) && File.Exists(item.DiskPath))
                     {
                         item.Image = LoadImageFromDisk(item.DiskPath);
@@ -300,7 +302,6 @@ namespace LiteFlow.UI
                 }
                 else
                 {
-                    // Fora do grupo VIP: Destrói o Bitmap da memória RAM
                     if (item.Image != null)
                     {
                         item.Image.Dispose();
@@ -309,7 +310,6 @@ namespace LiteFlow.UI
                 }
             }
 
-            // GC leve só para limpar pequenos ponteiros
             GC.Collect(2, GCCollectionMode.Optimized, false);
         }
 
@@ -336,10 +336,9 @@ namespace LiteFlow.UI
 
             _currentEvidence.Thumbnail.BackColor = Color.FromArgb(0, 120, 215);
 
-            // A MÁGICA DE GESTÃO ACONTECE AQUI ANTES DE MOSTRAR A IMAGEM
             ManageMemoryFocus(_currentEvidence);
 
-            _editorCore?.LoadImage(_currentEvidence.Image); // Seguro porque o ManageMemoryFocus acabou de a carregar
+            _editorCore?.LoadImage(_currentEvidence.Image);
 
             if (_stepNoteTextBox != null)
             {

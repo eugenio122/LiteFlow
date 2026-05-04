@@ -133,7 +133,7 @@ namespace LiteFlow.UI
                 if (r == DialogResult.Yes) SaveProjectCurrent();
             }
 
-            if (_historyRibbon.Controls.Count > 1 && MessageBox.Show("Deseja realmente limpar a sessão e iniciar um novo teste?", "Aviso Crítico", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.No) return;
+            if (_historyRibbon.Controls.Count > 1 && MessageBox.Show(LanguageManager.GetString("MsgClearSession"), LanguageManager.GetString("TitleCriticalWarning"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.No) return;
 
             _currentProjectData = new LiteFlowProjectData();
             _currentProjectData.ReportLayout = _defaultLayoutMode;
@@ -161,8 +161,8 @@ namespace LiteFlow.UI
             if (_historyRibbon.Controls.Count <= 1) return;
 
             var r = MessageBox.Show(
-                "Deseja realmente apagar todas as capturas e recomeçar a execução?\nOs dados do painel lateral (Caso de Teste, Data, Executor) serão mantidos intactos.",
-                "Recomeçar Projeto",
+                LanguageManager.GetString("MsgRestartConfirm"),
+                LanguageManager.GetString("TitleRestart"),
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
 
@@ -314,8 +314,23 @@ namespace LiteFlow.UI
             }
         }
 
-        private void BtnExportWord_Click(object? sender, EventArgs e)
+        // =========================================================================
+        // NOVO FLUXO ÚNICO DE EXPORTAÇÃO (SEM POPUPS)
+        // =========================================================================
+        private void BtnExportAll_Click(object? sender, EventArgs e)
         {
+            if (!_chkExportWord.Checked && !_chkExportPdf.Checked)
+            {
+                MessageBox.Show(LanguageManager.GetString("MsgNoExportFormat"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_txtExportPath.Text) || !Directory.Exists(_txtExportPath.Text))
+            {
+                MessageBox.Show(LanguageManager.GetString("MsgNoExportFolder"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             var itemsToExport = GetItems();
             if (itemsToExport.Count == 0) return;
 
@@ -329,64 +344,45 @@ namespace LiteFlow.UI
             }
 
             _currentProjectData.TemplatePath = templateToUse;
-
             SaveSettings();
             TriggerAutoSave();
 
             string rawName = string.IsNullOrWhiteSpace(_currentProjectData.FileName) ? "Evidencias_LiteFlow" : $"{_currentProjectData.FilePrefix} {_currentProjectData.FileName}".Trim();
             string safeFileName = SanitizeFileName(rawName);
 
-            using (SaveFileDialog sfd = new SaveFileDialog { Filter = "Word (*.docx)|*.docx", FileName = safeFileName + ".docx" })
+            // Constrói os caminhos finais invisivelmente
+            string basePath = Path.Combine(_txtExportPath.Text, safeFileName);
+            string wordPath = basePath + ".docx";
+            string pdfPath = basePath + ".pdf";
+
+            try
             {
-                if (sfd.ShowDialog() == DialogResult.OK)
+                this.Cursor = Cursors.WaitCursor;
+
+                // CASO 1: Ambos os formatos (Otimização máxima de CPU)
+                if (_chkExportWord.Checked && _chkExportPdf.Checked)
                 {
-                    try
-                    {
-                        this.Cursor = Cursors.WaitCursor;
-                        ExportService.ExportToWord(_currentProjectData, itemsToExport, sfd.FileName, BuildExportTags());
-                        this.Cursor = Cursors.Default;
-                        MessageBox.Show(string.Format(LanguageManager.GetString("MsgExportSuccessWord"), sfd.FileName), LanguageManager.GetString("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show(string.Format(LanguageManager.GetString("MsgError"), ex.Message), LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                    ExportService.ExportToWord(_currentProjectData, itemsToExport, wordPath, BuildExportTags());
+                    ExportService.ConvertDocxToPdf(wordPath, pdfPath);
                 }
-            }
-        }
-
-        private void BtnApplyToPdf_Click(object? sender, EventArgs e)
-        {
-            var itemsToExport = GetItems();
-            if (itemsToExport.Count == 0) return;
-
-            string templateToUse = !string.IsNullOrEmpty(_currentProjectData.TemplatePath) && File.Exists(_currentProjectData.TemplatePath)
-                                    ? _currentProjectData.TemplatePath
-                                    : _defaultTemplatePath;
-
-            if (string.IsNullOrEmpty(templateToUse) || !File.Exists(templateToUse))
-            {
-                MessageBox.Show(LanguageManager.GetString("MsgExportNoTemplate"), LanguageManager.GetString("Warning"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-
-            _currentProjectData.TemplatePath = templateToUse;
-
-            SaveSettings();
-            TriggerAutoSave();
-
-            string rawName = string.IsNullOrWhiteSpace(_currentProjectData.FileName) ? "Evidencias_LiteFlow" : $"{_currentProjectData.FilePrefix} {_currentProjectData.FileName}".Trim();
-            string safeFileName = SanitizeFileName(rawName);
-
-            using (SaveFileDialog sfd = new SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf", FileName = safeFileName + ".pdf" })
-            {
-                if (sfd.ShowDialog() == DialogResult.OK)
+                // CASO 2: Apenas Word
+                else if (_chkExportWord.Checked)
                 {
-                    try
-                    {
-                        this.Cursor = Cursors.WaitCursor;
-                        ExportService.ExportToPdf(_currentProjectData, itemsToExport, sfd.FileName, BuildExportTags());
-                        this.Cursor = Cursors.Default;
-                        MessageBox.Show(LanguageManager.GetString("MsgExportSuccessPdf"), LanguageManager.GetString("TitleLiteFlowPdf"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    catch (Exception ex) { this.Cursor = Cursors.Default; MessageBox.Show(string.Format(LanguageManager.GetString("MsgErrorPdf"), ex.Message), LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                    ExportService.ExportToWord(_currentProjectData, itemsToExport, wordPath, BuildExportTags());
                 }
+                // CASO 3: Apenas PDF
+                else if (_chkExportPdf.Checked)
+                {
+                    ExportService.ExportToPdf(_currentProjectData, itemsToExport, pdfPath, BuildExportTags());
+                }
+
+                this.Cursor = Cursors.Default;
+                MessageBox.Show(LanguageManager.GetString("MsgExportSuccess"), LanguageManager.GetString("TitleSuccess"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                this.Cursor = Cursors.Default;
+                MessageBox.Show(string.Format(LanguageManager.GetString("MsgError"), ex.Message), LanguageManager.GetString("TitleError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

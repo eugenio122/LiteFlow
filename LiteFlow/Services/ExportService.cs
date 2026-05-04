@@ -36,7 +36,7 @@ namespace LiteFlow.Services
             }
             finally
             {
-                // 4. Limpeza imediata! Exclui o arquivo temporário independentemente de erro ou sucesso
+                // 4. Limpeza imediata! Exclui o arquivo temporário independentemente de erro o sucesso
                 if (File.Exists(tempWordFile))
                 {
                     try { File.Delete(tempWordFile); } catch { }
@@ -44,7 +44,8 @@ namespace LiteFlow.Services
             }
         }
 
-        private static void ConvertDocxToPdf(string docxPath, string pdfPath)
+        // TORNADO PÚBLICO: Permite que a interface converta um DOCX já existente para poupar CPU
+        public static void ConvertDocxToPdf(string docxPath, string pdfPath)
         {
             try
             {

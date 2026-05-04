@@ -114,7 +114,14 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Idioma da Interface / Exportação:" },
                     { "LangManagedByHost", "(Idioma gerido pelo LiteTools)" },
                     { "BtnSaveClose", "Salvar e Fechar" },
-                    { "MsgRestartRequired", "As alterações de idioma foram guardadas. Por favor, reabra o projeto ou reinicie o aplicativo para que tenham efeito total." }
+                    { "MsgRestartRequired", "As alterações de idioma foram guardadas. Por favor, reabra o projeto ou reinicie o aplicativo para que tenham efeito total." },
+
+                    // NOVAS CHAVES DE EXPORTAÇÃO
+                    { "LblExportFolder", "Pasta de Saída:" },
+                    { "BtnExportAll", "Exportar Histórico" },
+                    { "MsgNoExportFolder", "Selecione uma Pasta de Saída válida antes de exportar." },
+                    { "MsgNoExportFormat", "Selecione pelo menos um formato de exportação (DOCX ou PDF)." },
+                    { "MsgExportSuccess", "Exportação concluída com sucesso na pasta selecionada!" }
                 }
             },
             {
@@ -215,7 +222,13 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Interface / Export Language:" },
                     { "LangManagedByHost", "(Language managed by LiteTools)" },
                     { "BtnSaveClose", "Save and Close" },
-                    { "MsgRestartRequired", "Language changes have been saved. Please reload the project or restart the app for full effect." }
+                    { "MsgRestartRequired", "Language changes have been saved. Please reload the project or restart the app for full effect." },
+
+                    { "LblExportFolder", "Output Folder:" },
+                    { "BtnExportAll", "Export History" },
+                    { "MsgNoExportFolder", "Please select a valid Output Folder before exporting." },
+                    { "MsgNoExportFormat", "Please select at least one export format (DOCX or PDF)." },
+                    { "MsgExportSuccess", "Export completed successfully in the selected folder!" }
                 }
             },
             {
@@ -316,7 +329,13 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Idioma de Interfaz / Exportación:" },
                     { "LangManagedByHost", "(Idioma gestionado por LiteTools)" },
                     { "BtnSaveClose", "Guardar y Cerrar" },
-                    { "MsgRestartRequired", "Los cambios de idioma se han guardado. Vuelva a abrir el proyecto o reinicie la aplicación para que surtan efecto." }
+                    { "MsgRestartRequired", "Los cambios de idioma se han guardado. Vuelva a abrir el proyecto o reinicie la aplicación para que surtan efecto." },
+
+                    { "LblExportFolder", "Carpeta de Salida:" },
+                    { "BtnExportAll", "Exportar Historial" },
+                    { "MsgNoExportFolder", "Seleccione una Carpeta de Salida válida antes de exportar." },
+                    { "MsgNoExportFormat", "Seleccione al menos un formato de exportación (DOCX o PDF)." },
+                    { "MsgExportSuccess", "¡Exportación completada con éxito en la carpeta seleccionada!" }
                 }
             },
             {
@@ -417,7 +436,13 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Langue de l'Interface / Exportation :" },
                     { "LangManagedByHost", "(Langue gérée par LiteTools)" },
                     { "BtnSaveClose", "Enregistrer et Fermer" },
-                    { "MsgRestartRequired", "Les changements de langue ont été enregistrés. Veuillez rouvrir le projet ou redémarrer l'application pour qu'ils prennent effet." }
+                    { "MsgRestartRequired", "Les changements de langue ont été enregistrés. Veuillez rouvrir le projet ou redémarrer l'application pour qu'ils prennent effet." },
+
+                    { "LblExportFolder", "Dossier de Sortie :" },
+                    { "BtnExportAll", "Exporter Historique" },
+                    { "MsgNoExportFolder", "Veuillez sélectionner un Dossier de Sortie valide avant d'exporter." },
+                    { "MsgNoExportFormat", "Veuillez sélectionner au moins un format d'exportation (DOCX ou PDF)." },
+                    { "MsgExportSuccess", "Exportation terminée avec succès dans le dossier sélectionné !" }
                 }
             },
             {
@@ -518,7 +543,13 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Schnittstellen- / Exportsprache:" },
                     { "LangManagedByHost", "(Sprache wird von LiteTools verwaltet)" },
                     { "BtnSaveClose", "Speichern und Schließen" },
-                    { "MsgRestartRequired", "Sprachänderungen wurden gespeichert. Bitte öffnen Sie das Projekt erneut oder starten Sie die Anwendung neu, damit sie wirksam werden." }
+                    { "MsgRestartRequired", "Sprachänderungen wurden gespeichert. Bitte öffnen Sie das Projekt erneut oder starten Sie die Anwendung neu, damit sie wirksam werden." },
+
+                    { "LblExportFolder", "Ausgabeordner:" },
+                    { "BtnExportAll", "Verlauf Exportieren" },
+                    { "MsgNoExportFolder", "Bitte wählen Sie vor dem Export einen gültigen Ausgabeordner." },
+                    { "MsgNoExportFormat", "Bitte wählen Sie mindestens ein Exportformat (DOCX oder PDF)." },
+                    { "MsgExportSuccess", "Export im ausgewählten Ordner erfolgreich abgeschlossen!" }
                 }
             },
             {
@@ -619,7 +650,13 @@ namespace LiteFlow.Core
                     { "SettingsLanguage", "Lingua Interfaccia / Esportazione:" },
                     { "LangManagedByHost", "(Lingua gestita da LiteTools)" },
                     { "BtnSaveClose", "Salva e Chiudi" },
-                    { "MsgRestartRequired", "Le modifiche alla lingua sono state salvate. Riapri il progetto o riavvia l'applicazione affinché abbiano pieno effetto." }
+                    { "MsgRestartRequired", "Le modifiche alla lingua sono state salvate. Riapri il progetto o riavvia l'applicazione affinché abbiano pieno effetto." },
+
+                    { "LblExportFolder", "Cartella di Uscita:" },
+                    { "BtnExportAll", "Esporta Cronologia" },
+                    { "MsgNoExportFolder", "Seleziona una Cartella di Uscita valida prima di esportare." },
+                    { "MsgNoExportFormat", "Seleziona almeno un formato di esportazione (DOCX o PDF)." },
+                    { "MsgExportSuccess", "Esportazione completata con successo nella cartella selezionata!" }
                 }
             }
         };

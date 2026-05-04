@@ -20,17 +20,17 @@ namespace LiteFlow.UI
             _historyWrapper = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
 
             _historyHeaderPanel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, Padding = new Padding(5, 5, 5, 10), WrapContents = false };
-            _lblHistoryTitle = new Label { Text = "⏱️ Histórico", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 10) };
+            _lblHistoryTitle = new Label { Text = "⏱️ " + LanguageManager.GetString("LblHistory"), AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 10) };
 
             FlowLayoutPanel pnlButtons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0) };
 
-            _btnPaste = new Button { Text = "📋 Colar Imagem", Width = 130, Height = 28, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke, Margin = new Padding(5, 0, 0, 5), TextAlign = ContentAlignment.MiddleLeft };
+            _btnPaste = new Button { Text = "📋 " + LanguageManager.GetString("BtnPasteImage"), Width = 130, Height = 28, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke, Margin = new Padding(5, 0, 0, 5), TextAlign = ContentAlignment.MiddleLeft };
             _btnPaste.FlatAppearance.BorderSize = 0;
             _btnPaste.Click += (s, e) => {
                 if (!PasteImageFromClipboard()) MessageBox.Show(LanguageManager.GetString("MsgNoImageClipboard"), LanguageManager.GetString("TitlePaste"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
-            _btnAddBlank = new Button { Text = "➕ Tela em Branco", Width = 130, Height = 28, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke, Margin = new Padding(5, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft };
+            _btnAddBlank = new Button { Text = "➕ " + LanguageManager.GetString("BtnAddBlank"), Width = 130, Height = 28, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8F), Cursor = Cursors.Hand, BackColor = Color.WhiteSmoke, Margin = new Padding(5, 0, 0, 0), TextAlign = ContentAlignment.MiddleLeft };
             _btnAddBlank.FlatAppearance.BorderSize = 0;
             _btnAddBlank.Click += (s, e) => {
                 Bitmap blank = new Bitmap(1024, 768);
@@ -131,7 +131,7 @@ namespace LiteFlow.UI
 
             _projectUndoStack.Clear();
             _projectRedoStack.Clear();
-            _evidenceDiskPaths.Clear(); // <-- LIMPO DE FORMA SEGURA. Sem a variável de Lista antiga a causar embaraços.
+            _evidenceDiskPaths.Clear();
 
             if (_editorCore != null) { _editorCore.LoadImage(new Bitmap(10, 10)); }
 

@@ -43,28 +43,24 @@ namespace LiteFlow.UI
             private Color PressedColor = Color.FromArgb(85, 85, 88);
             private Color BgColor = Color.FromArgb(45, 45, 48);
 
-            // HOVER (Rato por cima) - Mata os gradientes brancos nativos
             public override Color ButtonSelectedHighlight => HoverColor;
             public override Color ButtonSelectedBorder => HoverColor;
             public override Color ButtonSelectedGradientBegin => HoverColor;
             public override Color ButtonSelectedGradientMiddle => HoverColor;
             public override Color ButtonSelectedGradientEnd => HoverColor;
 
-            // PRESSED (Clicar no botão)
             public override Color ButtonPressedHighlight => PressedColor;
             public override Color ButtonPressedBorder => PressedColor;
             public override Color ButtonPressedGradientBegin => PressedColor;
             public override Color ButtonPressedGradientMiddle => PressedColor;
             public override Color ButtonPressedGradientEnd => PressedColor;
 
-            // CHECKED (Ferramenta atualmente selecionada, ex: Seta)
             public override Color ButtonCheckedHighlight => PressedColor;
             public override Color ButtonCheckedHighlightBorder => PressedColor;
             public override Color ButtonCheckedGradientBegin => PressedColor;
             public override Color ButtonCheckedGradientMiddle => PressedColor;
             public override Color ButtonCheckedGradientEnd => PressedColor;
 
-            // FUNDO DA NAVBAR
             public override Color ToolStripBorder => BgColor;
             public override Color ToolStripGradientBegin => BgColor;
             public override Color ToolStripGradientMiddle => BgColor;
@@ -160,7 +156,6 @@ namespace LiteFlow.UI
             _topToolbar.BackColor = surface;
             _topToolbar.ForeColor = textMain;
 
-            // Aplica a nova classe DarkModeColorTable
             if (isDark)
             {
                 _topToolbar.Renderer = new ToolStripProfessionalRenderer(new DarkModeColorTable()) { RoundedEdges = false };
@@ -208,6 +203,11 @@ namespace LiteFlow.UI
             if (_chkTextBelowStep != null) _chkTextBelowStep.ForeColor = textMain;
             if (_chkPropDefaultQA != null) _chkPropDefaultQA.ForeColor = textMain;
             if (_chkPropDefaultPrefix != null) _chkPropDefaultPrefix.ForeColor = textMain;
+
+            // Pinta os controlos novos do Export Pipeline
+            if (_txtExportPath != null) { _txtExportPath.BackColor = inputBg; _txtExportPath.ForeColor = textMain; }
+            if (_chkExportWord != null) _chkExportWord.ForeColor = textMain;
+            if (_chkExportPdf != null) _chkExportPdf.ForeColor = textMain;
 
             if (_stepNoteTextBox != null) { _stepNoteTextBox.BackColor = inputBg; _stepNoteTextBox.ForeColor = textMain; }
 
@@ -273,6 +273,12 @@ namespace LiteFlow.UI
                     if (lines.Length > 9 && bool.TryParse(lines[9], out bool isDark)) { _isDarkMode = isDark; }
                     if (lines.Length > 10 && Enum.TryParse(lines[10], out LayoutMode lMode)) { _defaultLayoutMode = lMode; _currentProjectData.ReportLayout = lMode; }
                     if (lines.Length > 11 && int.TryParse(lines[11], out int cols)) { _defaultMobileColumns = cols; _currentProjectData.MobileColumns = cols; }
+                    if (lines.Length > 13)
+                    {
+                        _defaultExportPath = lines[13];
+                        // INJEÇÃO DA CORREÇÃO: Atualiza o campo visual para não ficar em branco!
+                        if (_txtExportPath != null) _txtExportPath.Text = _defaultExportPath;
+                    }
                 }
                 UpdatePropertiesPanelFromData();
             }
@@ -293,7 +299,8 @@ namespace LiteFlow.UI
                 var lines = new string[] {
                     "160", ColorTranslator.ToHtml(_btnColorPicker.BackColor), _trkThickness.Value.ToString(),
                     _cmbFont.Text, _cmbSize.Text, _defaultTemplatePath, _defaultQAName, _defaultPrefix,
-                    "false", _isDarkMode.ToString(), _defaultLayoutMode.ToString(), _defaultMobileColumns.ToString(), LanguageManager.CurrentLanguage
+                    "false", _isDarkMode.ToString(), _defaultLayoutMode.ToString(), _defaultMobileColumns.ToString(), LanguageManager.CurrentLanguage,
+                    _defaultExportPath
                 };
                 File.WriteAllLines(_configPath, lines);
                 _templateThumbnail?.Invalidate();
@@ -500,19 +507,51 @@ namespace LiteFlow.UI
         {
             _propertiesPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
 
-            var pnlExport = new Panel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(15, 10, 15, 15) };
+            // =========================================================================
+            // NOVO PAINEL DE EXPORTAÇÃO (INTELIGENTE E SEM POPUPS) - LIMPO DE DUPLICADOS!
+            // =========================================================================
+            var pnlExport = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(15, 10, 15, 15) };
 
-            var btnPdf = new Button { Text = LanguageManager.GetString("BtnExportPdf"), Dock = DockStyle.Bottom, AutoSize = true, MinimumSize = new Size(0, 38), BackColor = Color.FromArgb(220, 53, 69), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
-            btnPdf.FlatAppearance.BorderSize = 0; btnPdf.Click += BtnApplyToPdf_Click;
+            var lblExportFolder = new Label { Text = LanguageManager.GetString("LblExportFolder"), AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 5) };
 
-            var lblSpacer = new Label { Dock = DockStyle.Bottom, Height = 10 };
+            var tlpFolder = new TableLayoutPanel { Width = 280, Height = 30, ColumnCount = 2, Margin = new Padding(0, 0, 0, 10) };
+            tlpFolder.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlpFolder.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 35F));
 
-            var btnWordExport = new Button { Text = LanguageManager.GetString("BtnExportWord"), Dock = DockStyle.Bottom, AutoSize = true, MinimumSize = new Size(0, 38), BackColor = Color.FromArgb(0, 120, 215), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
-            btnWordExport.FlatAppearance.BorderSize = 0; btnWordExport.Click += BtnExportWord_Click;
+            _txtExportPath = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Text = _defaultExportPath };
+            var btnBrowseFolder = new Button { Text = "...", Dock = DockStyle.Fill, Cursor = Cursors.Hand };
+            btnBrowseFolder.Click += (s, e) => {
+                using (FolderBrowserDialog fbd = new FolderBrowserDialog())
+                {
+                    if (fbd.ShowDialog() == DialogResult.OK)
+                    {
+                        _txtExportPath.Text = fbd.SelectedPath;
+                        _defaultExportPath = fbd.SelectedPath;
+                        SaveSettings();
+                    }
+                }
+            };
+            tlpFolder.Controls.Add(_txtExportPath, 0, 0);
+            tlpFolder.Controls.Add(btnBrowseFolder, 1, 0);
 
-            pnlExport.Controls.Add(btnWordExport);
-            pnlExport.Controls.Add(lblSpacer);
-            pnlExport.Controls.Add(btnPdf);
+            var flpChecks = new FlowLayoutPanel { Width = 280, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 0, 0, 10) };
+            _chkExportWord = new CheckBox { Text = "DOCX", Checked = true, AutoSize = true, Cursor = Cursors.Hand, ForeColor = Color.DimGray };
+            _chkExportPdf = new CheckBox { Text = "PDF", Checked = true, AutoSize = true, Cursor = Cursors.Hand, ForeColor = Color.DimGray };
+            flpChecks.Controls.Add(_chkExportWord);
+            flpChecks.Controls.Add(_chkExportPdf);
+
+            var spacer = new Label { Dock = DockStyle.Top, Height = 10 };
+
+            _btnExportAll = new Button { Text = LanguageManager.GetString("BtnExportAll"), Width = 280, Height = 38, BackColor = Color.FromArgb(0, 120, 215), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9F, FontStyle.Bold), Cursor = Cursors.Hand };
+            _btnExportAll.FlatAppearance.BorderSize = 0;
+            _btnExportAll.Click += BtnExportAll_Click; // Este método já está no LiteFlowUI.Project.cs
+
+            pnlExport.Controls.Add(lblExportFolder);
+            pnlExport.Controls.Add(tlpFolder);
+            pnlExport.Controls.Add(flpChecks);
+            pnlExport.Controls.Add(spacer);
+            pnlExport.Controls.Add(_btnExportAll);
+            // =========================================================================
 
             _propertiesScrollPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(15, 10, 10, 10) };
 
