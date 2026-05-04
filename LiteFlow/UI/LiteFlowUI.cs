@@ -18,7 +18,7 @@ namespace LiteFlow.UI
     public partial class LiteFlowUI : UserControl, ILitePlugin
     {
         public string Name => "LiteFlow";
-        public string Version => "1.5.1 (Codebase Cleanup)";
+        public string Version => "1.5.0";
 
         private IEventBus? _eventBus;
         private ILiteHostContext? _hostContext;
