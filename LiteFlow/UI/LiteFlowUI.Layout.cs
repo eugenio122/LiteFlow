@@ -634,7 +634,16 @@ namespace LiteFlow.UI
 
             _propertiesScrollPanel.Controls.Add(new Label { Text = LanguageManager.GetString("LblFileName"), AutoSize = true, ForeColor = Color.DimGray });
             _txtPropFileName = new RichTextBox { Width = ctrlWidth, Height = 35, Multiline = true, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 10) };
-            _txtPropFileName.TextChanged += (s, e) => { if (_isProgrammaticUpdate) return; _currentProjectData.FileName = _txtPropFileName.Text; _hasUnsavedChanges = true; TriggerAutoSave(); };
+            _txtPropFileName.TextChanged += (s, e) => {
+                if (_isProgrammaticUpdate) return;
+                _currentProjectData.FileName = _txtPropFileName.Text;
+                _hasUnsavedChanges = true;
+
+                // Grita para o Host em tempo real!
+                _hostContext?.SetSessionMetadata("CurrentFileName", _txtPropFileName.Text);
+
+                TriggerAutoSave();
+            };
             var ctxFileName = new ContextMenuStrip();
             ctxFileName.Items.Add(LanguageManager.GetString("CtxPasteNoFormat"), null, (s, e) => { if (Clipboard.ContainsText()) _txtPropFileName.SelectedText = Clipboard.GetText(TextDataFormat.Text); });
             _txtPropFileName.ContextMenuStrip = ctxFileName;

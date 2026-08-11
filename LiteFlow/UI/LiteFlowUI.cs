@@ -353,8 +353,13 @@ namespace LiteFlow.UI
 
         private void FeedTestCaseToHostContext()
         {
+            // O que já lá estava (Caso de Teste)
             if (!string.IsNullOrEmpty(_currentProjectData.TestCaseName))
                 _hostContext?.SetSessionMetadata("CurrentTestCaseName", _currentProjectData.TestCaseName);
+
+            // Envia o Nome do Arquivo para o LiteJson
+            if (!string.IsNullOrEmpty(_currentProjectData.FileName))
+                _hostContext?.SetSessionMetadata("CurrentFileName", _currentProjectData.FileName);
         }
 
         private void PerformUndo()
